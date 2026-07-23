@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # MASTER DATABASE ENGINE (POSTGRESQL 16)
+  # ==========================================
+  medsupply-db:
+    image: postgres:16-alpine
+    container_name: medsupply-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: medsupply
+      POSTGRES_USER: medsupply_admin
+      POSTGRES_PASSWORD: StrongProductionSecurePassword123!
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medsupply_admin -d medsupply"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+
+  # ==========================================
+  # REDIS HIGH-SPEED CACHE ENGINE
+  # ==========================================
+  medsupply-cache:
+    image: redis:7-alpine
+    container_name: medsupply-redis
+    restart: unless-stopped
+    command: redis-server --requirepass RedisStrongProductionSecurePassword123! --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "RedisStrongProductionSecurePassword123!", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ==========================================
+  # ENTERPRISE MONOLITHIC BACKEND (SPRING BOOT 3.5)
+  # ==========================================
+  medsupply-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medsupply-platform-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://medsupply-db:5432/medsupply
+      - SPRING_DATASOURCE_USERNAME=medsupply_admin
+      - SPRING_DATASOURCE_PASSWORD=StrongProductionSecurePassword123!
+      - SPRING_DATA_REDIS_HOST=medsupply-cache
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATA_REDIS_PASSWORD=RedisStrongProductionSecurePassword123!
+      - AWS_S3_BUCKET_NAME=medsupply-enterprise-storage
+      - AWS_S3_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=YOUR_PRODUCTION_AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY=YOUR_PRODUCTION_AWS_SECRET_ACCESS_KEY
+      - FIREBASE_CREDENTIALS_JSON_BASE64=YOUR_BASE64_FIREBASE_CREDENTIALS_JSON
+    depends_on:
+      medsupply-db:
+        condition: service_healthy
+      medsupply-cache:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local

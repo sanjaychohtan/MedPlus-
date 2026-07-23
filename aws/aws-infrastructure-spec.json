@@ -1,0 +1,140 @@
+{
+  "project": "MedSupply Enterprise Platform",
+  "phase": "4 - Final Production Deployment Spec",
+  "aws_region": "us-east-1",
+  "architecture": {
+    "vpc": {
+      "cidr_block": "10.0.0.0/16",
+      "subnets": {
+        "public": [
+          {"id": "subnet-public-1a", "cidr": "10.0.1.0/24", "az": "us-east-1a"},
+          {"id": "subnet-public-1b", "cidr": "10.0.2.0/24", "az": "us-east-1b"}
+        ],
+        "private_app": [
+          {"id": "subnet-private-app-1a", "cidr": "10.0.10.0/24", "az": "us-east-1a"},
+          {"id": "subnet-private-app-1b", "cidr": "10.0.11.0/24", "az": "us-east-1b"}
+        ],
+        "private_db": [
+          {"id": "subnet-private-db-1a", "cidr": "10.0.20.0/24", "az": "us-east-1a"},
+          {"id": "subnet-private-db-1b", "cidr": "10.0.21.0/24", "az": "us-east-1b"}
+        ]
+      },
+      "nat_gateway": {
+        "allocation_eip": "eipalloc-medsupply-nat",
+        "subnet_id": "subnet-public-1a"
+      }
+    },
+    "security_groups": {
+      "cloudfront_sg": {
+        "description": "Allow only HTTPS inbound from CloudFront edge locations"
+      },
+      "bastion_sg": {
+        "ingress": [
+          {"protocol": "tcp", "port": 22, "source": "YOUR_OFFICE_IP/32", "desc": "SSH Access"}
+        ]
+      },
+      "app_sg": {
+        "ingress": [
+          {"protocol": "tcp", "port": 8080, "source": "sg-load-balancer", "desc": "Application Ingress"},
+          {"protocol": "tcp", "port": 22, "source": "sg-bastion", "desc": "Bastion Admin SSH"}
+        ],
+        "egress": [
+          {"protocol": "-1", "port": 0, "destination": "0.0.0.0/0", "desc": "Allow all outbound"}
+        ]
+      },
+      "db_sg": {
+        "ingress": [
+          {"protocol": "tcp", "port": 5432, "source": "sg-app-servers", "desc": "PostgreSQL Ingress"}
+        ]
+      },
+      "cache_sg": {
+        "ingress": [
+          {"protocol": "tcp", "port": 6379, "source": "sg-app-servers", "desc": "Redis Ingress"}
+        ]
+      }
+    },
+    "s3_buckets": {
+      "product_assets": {
+        "name": "medsupply-enterprise-storage",
+        "encryption": "aws:kms",
+        "cors_rules": [
+          {
+            "allowed_headers": ["*"],
+            "allowed_methods": ["GET", "PUT", "POST", "HEAD"],
+            "allowed_origins": ["https://medsupply.com", "https://*.medsupply.com"],
+            "expose_headers": ["ETag"]
+          }
+        ],
+        "versioning": "Enabled",
+        "lifecycle_rules": [
+          {
+            "id": "transition-to-glacier",
+            "status": "Enabled",
+            "filter": {"prefix": "documents/"},
+            "transitions": [
+              {"days": 90, "storage_class": "GLACIER"}
+            ]
+          }
+        ]
+      }
+    },
+    "cloudfront": {
+      "distribution_id": "E1ABC2DEF3GHI",
+      "aliases": ["medsupply.com", "www.medsupply.com"],
+      "origins": {
+        "s3_origin": {
+          "domain_name": "medsupply-enterprise-storage.s3.amazonaws.com",
+          "origin_access_control": "OAC-MedSupply"
+        },
+        "alb_origin": {
+          "domain_name": "alb-medsupply-prod-123456789.us-east-1.elb.amazonaws.com",
+          "protocol_policy": "https-only"
+        }
+      },
+      "cache_behaviors": {
+        "default": {
+          "target_origin": "alb_origin",
+          "viewer_protocol_policy": "redirect-to-https",
+          "allowed_methods": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+          "forwarded_values": {
+            "query_string": true,
+            "headers": ["Authorization", "Host", "Cookie"],
+            "cookies": {"forward": "all"}
+          }
+        },
+        "static_assets": {
+          "path_pattern": "/static/*",
+          "target_origin": "s3_origin",
+          "viewer_protocol_policy": "redirect-to-https",
+          "allowed_methods": ["GET", "HEAD", "OPTIONS"]
+        }
+      },
+      "security": {
+        "web_acl_id": "WAFv2-MedSupply-Policy",
+        "minimum_protocol_version": "TLSv1.2_2021"
+      }
+    },
+    "rds_postgresql": {
+      "db_instance_class": "db.t4g.medium",
+      "multi_az": true,
+      "allocated_storage_gb": 100,
+      "max_allocated_storage_gb": 1000,
+      "engine": "postgres",
+      "engine_version": "16.1",
+      "storage_type": "gp3",
+      "backup_retention_days": 30,
+      "deletion_protection": true,
+      "monitoring_interval_seconds": 60,
+      "performance_insights_enabled": true
+    },
+    "ec2_autoscaling": {
+      "ami_id": "ami-0c7217cdde317cfec",
+      "instance_type": "t3.medium",
+      "min_size": 2,
+      "max_size": 6,
+      "desired_capacity": 2,
+      "cooldown_seconds": 300,
+      "target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/tg-medsupply-prod/abc"
+    }
+  }
+}

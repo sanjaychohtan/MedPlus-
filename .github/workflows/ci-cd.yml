@@ -1,0 +1,103 @@
+name: MedSupply Platform CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ==========================================
+  # JOB 1: CODE INTEGRITY & STYLE CHECK (LINT)
+  # ==========================================
+  frontend-lint-build:
+    name: Frontend Quality & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Run TypeScript Linter Check
+        run: npm run lint
+
+      - name: Build Frontend Production Assets
+        run: npm run build
+
+  # ==========================================
+  # JOB 2: BACKEND COMPILE & TEST
+  # ==========================================
+  backend-test-build:
+    name: Backend Test & Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21 JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Compile and Run Unit + Integration Tests
+        run: |
+          cd backend
+          mvn clean test -B
+
+      - name: Package Executable JAR
+        run: |
+          cd backend
+          mvn package -DskipTests -B
+
+  # ==========================================
+  # JOB 3: CONTAINER SECURITY & REGISTRY PUBLISH
+  # ==========================================
+  docker-publish:
+    name: Docker Build & Push
+    needs: [frontend-lint-build, backend-test-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/backend-service
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

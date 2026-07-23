@@ -1,0 +1,6 @@
+{
+  "name": "MedSupply - Enterprise Medical Supply Management Platform",
+  "description": "Production-grade B2B and B2C Medical Supply Chain, Inventory, Multi-Warehouse, Batch & Expiry Tracking, Order Fulfillment, and Multi-Role Management Platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,86 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+  error:
+    include-message: always
+    include-binding-errors: always
+
+spring:
+  application:
+    name: platform
+  
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/medsupply}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+      max-lifetime: 1800000
+
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    timeout: 6000ms
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate # strictly validated; flyway controls migrations
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+
+# Actuator Configuration for Production Health Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+# Custom Secure Application Variables
+app:
+  security:
+    # 512-bit secure hex key placeholder (must be overridden in production env)
+    jwt-secret: ${JWT_SECRET:d3M0LXNlY3VyZS1oZXgtcGxhY2Vob2xkZXItNTEyLWJpdC1jdXN0b20ta2V5LXRvLXNlY3VyZS10aGUtd2hvbGUtYmFja2VuZC1tZWRzdXBwbHktcGxhdGZvcm0=}
+    jwt-expiration-ms: 900000 # 15 minutes (900,000 ms)
+    refresh-token-expiration-ms: 604800000 # 7 days (604,800,000 ms)
+    otp-expiration-minutes: 5
+    max-failed-login-attempts: 5
+  aws:
+    s3:
+      bucket-name: ${AWS_S3_BUCKET:medsupply-enterprise-vault}
+      region: ${AWS_S3_REGION:us-east-1}
+      access-key: ${AWS_ACCESS_KEY_ID:}
+      secret-key: ${AWS_SECRET_ACCESS_KEY:}
+  firebase:
+    fcm:
+      service-account-json-path: ${FIREBASE_CONFIG_PATH:}
+
+logging:
+  level:
+    root: INFO
+    com.medsupply.platform: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
