@@ -34,20 +34,45 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         try {
             String jwt = parseJwt(request);
-            if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
-                String email = tokenProvider.getEmailFromToken(jwt);
+            if (StringUtils.hasText(jwt)) {
+                if (tokenProvider.validateToken(jwt)) {
+                    String tokenType = tokenProvider.getTokenTypeFromToken(jwt);
+                    if ("access".equals(tokenType)) {
+                        String email = tokenProvider.getEmailFromToken(jwt);
+                        UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                        
+                        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                                userDetails, null, userDetails.getAuthorities());
+                        
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
-                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
-                
-                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-                
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                    } else {
+                        log.warn("Rejected JWT authentication request: Token type is not 'access'");
+                        SecurityContextHolder.clearContext();
+                    }
+                } else {
+                    SecurityContextHolder.clearContext();
+                }
             }
+        } catch (io.jsonwebtoken.ExpiredJwtException e) {
+            log.warn("JWT token has expired: {}", e.getMessage());
+            SecurityContextHolder.clearContext();
+        } catch (io.jsonwebtoken.MalformedJwtException e) {
+            log.warn("JWT token is malformed: {}", e.getMessage());
+            SecurityContextHolder.clearContext();
+        } catch (io.jsonwebtoken.security.SignatureException e) {
+            log.warn("JWT token signature validation failed: {}", e.getMessage());
+            SecurityContextHolder.clearContext();
+        } catch (io.jsonwebtoken.UnsupportedJwtException e) {
+            log.warn("JWT token is unsupported: {}", e.getMessage());
+            SecurityContextHolder.clearContext();
+        } catch (IllegalArgumentException e) {
+            log.warn("JWT token claims string is empty or invalid: {}", e.getMessage());
+            SecurityContextHolder.clearContext();
         } catch (Exception e) {
             log.error("Cannot set user authentication in context: {}", e.getMessage());
+            SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);

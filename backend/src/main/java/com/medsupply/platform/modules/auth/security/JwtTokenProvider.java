@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -24,6 +25,7 @@ public class JwtTokenProvider {
     private final SecretKey key;
     private final long jwtExpirationMs;
     private final long refreshExpirationMs;
+    private final JwtParser jwtParser;
 
     public JwtTokenProvider(
             @Value("${app.security.jwt-secret}") String jwtSecret,
@@ -33,6 +35,12 @@ public class JwtTokenProvider {
         this.key = Keys.hmacShaKeyFor(keyBytes);
         this.jwtExpirationMs = jwtExpirationMs;
         this.refreshExpirationMs = refreshExpirationMs;
+        
+        // Clock skew of 60 seconds handled during parsing
+        this.jwtParser = Jwts.parser()
+                .verifyWith(this.key)
+                .clockSkewSeconds(60)
+                .build();
     }
 
     /**
@@ -50,6 +58,10 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(username)
                 .claim("roles", roles)
+                .claim("type", "access")
+                .claim("iss", "medsupply-platform")
+                .claim("aud", "medsupply-clients")
+                .claim("jti", UUID.randomUUID().toString())
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(key)
@@ -66,6 +78,10 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(email)
                 .claim("roles", roles)
+                .claim("type", "access")
+                .claim("iss", "medsupply-platform")
+                .claim("aud", "medsupply-clients")
+                .claim("jti", UUID.randomUUID().toString())
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(key)
@@ -81,6 +97,10 @@ public class JwtTokenProvider {
 
         return Jwts.builder()
                 .subject(email)
+                .claim("type", "refresh")
+                .claim("iss", "medsupply-platform")
+                .claim("aud", "medsupply-clients")
+                .claim("jti", UUID.randomUUID().toString())
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(key)
@@ -91,12 +111,7 @@ public class JwtTokenProvider {
      * Decodes and extracts the user email from a verified JWT token.
      */
     public String getEmailFromToken(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(key)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-
+        Claims claims = jwtParser.parseSignedClaims(token).getPayload();
         return claims.getSubject();
     }
 
@@ -105,28 +120,23 @@ public class JwtTokenProvider {
      */
     @SuppressWarnings("unchecked")
     public List<String> getRolesFromToken(String token) {
-        Claims claims = Jwts.parser()
-                .verifyWith(key)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-
+        Claims claims = jwtParser.parseSignedClaims(token).getPayload();
         return claims.get("roles", List.class);
+    }
+
+    /**
+     * Extracts token type claim.
+     */
+    public String getTokenTypeFromToken(String token) {
+        Claims claims = jwtParser.parseSignedClaims(token).getPayload();
+        return claims.get("type", String.class);
     }
 
     /**
      * Validates a token signature, parsing integrity and expiration times.
      */
-    public boolean validateToken(String authToken) {
-        try {
-            Jwts.parser()
-                    .verifyWith(key)
-                    .build()
-                    .parseSignedClaims(authToken);
-            return true;
-        } catch (JwtException | IllegalArgumentException ex) {
-            log.error("JWT token validation failed: {}", ex.getMessage());
-        }
-        return false;
+    public boolean validateToken(String authToken) throws JwtException, IllegalArgumentException {
+        jwtParser.parseSignedClaims(authToken);
+        return true;
     }
 }

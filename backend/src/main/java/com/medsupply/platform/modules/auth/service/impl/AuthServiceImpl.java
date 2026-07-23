@@ -281,7 +281,13 @@ public class AuthServiceImpl implements AuthService {
     public LoginResponse refreshAccessToken(String refreshToken, String clientIp) {
         log.debug("Refreshing Access Token using Refresh JWT");
 
-        if (!tokenProvider.validateToken(refreshToken)) {
+        try {
+            tokenProvider.validateToken(refreshToken);
+            String tokenType = tokenProvider.getTokenTypeFromToken(refreshToken);
+            if (!"refresh".equals(tokenType)) {
+                throw new DomainException("INVALID_REFRESH_TOKEN", "The token type is invalid.", HttpStatus.UNAUTHORIZED);
+            }
+        } catch (Exception e) {
             throw new DomainException("INVALID_REFRESH_TOKEN", "The refresh token is invalid or expired.", HttpStatus.UNAUTHORIZED);
         }
 
