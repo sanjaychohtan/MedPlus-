@@ -10,6 +10,9 @@ import java.util.UUID;
 
 @Repository
 public interface ProductRepository extends JpaRepository<Product, UUID> {
+    boolean existsBySkuIgnoreCaseAndIsDeletedFalse(String sku);
+
+    org.springframework.data.domain.Page<Product> findByIsDeletedFalse(org.springframework.data.domain.Pageable pageable);
 
     @Query("SELECT p FROM Product p WHERE p.isDeleted = false AND " +
            "(LOWER(p.name) LIKE LOWER(CONCAT('%', :q, '%')) OR " +

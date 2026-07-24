@@ -3,15 +3,20 @@ package com.medsupply.platform.modules.auth.controller;
 import com.medsupply.platform.common.dto.ApiResponse;
 import com.medsupply.platform.modules.auth.dto.*;
 import com.medsupply.platform.modules.auth.service.AuthService;
+import com.medsupply.platform.modules.auth.security.JwtTokenProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -21,10 +26,15 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
+@Validated
 @Tag(name = "Authentication Management", description = "Endpoints handling user logins, registrations, token refreshes, and recovery pipelines.")
 public class AuthController {
 
     private final AuthService authService;
+    private final JwtTokenProvider tokenProvider;
+
+    @Value("${app.security.enable-switch-role:false}")
+    private boolean enableSwitchRole;
 
     @PostMapping("/register")
     @Operation(summary = "Register a new user", description = "Validates credentials and registers new accounts. Triggers a 5-minute verification OTP code.")
@@ -84,7 +94,7 @@ public class AuthController {
     @PostMapping("/resend-otp")
     @Operation(summary = "Resend OTP", description = "Regenerates and logs a fresh 5-minute verification code for pending accounts.")
     public ResponseEntity<ApiResponse<Void>> resendOtp(
-            @RequestParam String email,
+            @RequestParam @NotBlank @Email String email,
             HttpServletRequest httpServletRequest) {
         String clientIp = resolveClientIp(httpServletRequest);
         authService.resendOtp(email, clientIp);
@@ -148,7 +158,26 @@ public class AuthController {
 
     @PostMapping("/logout")
     @Operation(summary = "Logout user", description = "Clears access and refresh token cookies.")
-    public ResponseEntity<ApiResponse<Void>> logout(jakarta.servlet.http.HttpServletResponse httpServletResponse) {
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @jakarta.servlet.http.CookieValue(value = "refresh_token", required = false) String refreshTokenFromCookie,
+            @RequestParam(value = "refreshToken", required = false) String refreshTokenParam,
+            HttpServletRequest httpServletRequest,
+            jakarta.servlet.http.HttpServletResponse httpServletResponse) {
+        
+        String tokenToUse = refreshTokenFromCookie;
+        if (!org.springframework.util.StringUtils.hasText(tokenToUse)) {
+            tokenToUse = refreshTokenParam;
+        }
+
+        if (org.springframework.util.StringUtils.hasText(tokenToUse)) {
+            String clientIp = resolveClientIp(httpServletRequest);
+            try {
+                authService.logout(tokenToUse, clientIp);
+            } catch (Exception e) {
+                // Log and continue to clear cookies
+            }
+        }
+
         org.springframework.http.ResponseCookie clearAccess = org.springframework.http.ResponseCookie.from("access_token", "")
                 .httpOnly(true)
                 .secure(true)
@@ -190,6 +219,11 @@ public class AuthController {
             @RequestBody java.util.Map<String, String> body,
             HttpServletRequest httpServletRequest,
             jakarta.servlet.http.HttpServletResponse httpServletResponse) {
+        if (!enableSwitchRole) {
+            throw new com.medsupply.platform.common.exception.DomainException(
+                "ENDPOINT_DISABLED", "Role switching is disabled in this environment.", HttpStatus.FORBIDDEN);
+        }
+
         String roleStr = body.get("role");
         if (roleStr == null) {
             throw new com.medsupply.platform.common.exception.DomainException(

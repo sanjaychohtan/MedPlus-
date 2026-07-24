@@ -44,8 +44,9 @@ public class StockTransfer extends BaseEntity {
     private String requestedBy;
 
     @Builder.Default
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private String status = "PENDING";
+    private WarehouseTransferStatus status = WarehouseTransferStatus.PENDING;
 
     @Column(columnDefinition = "TEXT")
     private String notes;

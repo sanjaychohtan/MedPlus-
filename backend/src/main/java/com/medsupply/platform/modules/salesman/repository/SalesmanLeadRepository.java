@@ -8,5 +8,9 @@ import java.util.UUID;
 
 @Repository
 public interface SalesmanLeadRepository extends JpaRepository<SalesmanLead, UUID> {
+    List<SalesmanLead> findByIsDeletedFalse();
+    org.springframework.data.domain.Page<SalesmanLead> findByIsDeletedFalse(org.springframework.data.domain.Pageable pageable);
     List<SalesmanLead> findBySalesmanIdAndIsDeletedFalse(UUID salesmanId);
+    boolean existsByEmailIgnoreCaseAndIsDeletedFalse(String email);
+    boolean existsByPhoneAndIsDeletedFalse(String phone);
 }

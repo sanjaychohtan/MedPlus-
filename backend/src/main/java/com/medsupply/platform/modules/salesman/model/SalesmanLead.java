@@ -32,8 +32,9 @@ public class SalesmanLead extends BaseEntity {
     private String phone;
 
     @Builder.Default
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private String status = "LEAD"; -- LEAD, CONTACTED, NEGOTIATING, ONBOARDED
+    private LeadStatus status = LeadStatus.LEAD;
 
     @Column(length = 100)
     private String source;

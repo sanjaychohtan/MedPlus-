@@ -44,6 +44,11 @@ public interface AuthService {
     LoginResponse refreshAccessToken(String refreshToken, String clientIp);
 
     /**
+     * Invalidates a refresh token and/or access token jti on logout.
+     */
+    void logout(String refreshToken, String clientIp);
+
+    /**
      * Development utility to retrieve a user profile by email for role switching.
      */
     com.medsupply.platform.modules.auth.model.User getUserByEmail(String email);

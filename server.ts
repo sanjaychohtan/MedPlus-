@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import { createServer as createViteServer } from 'vite';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 
@@ -29,6 +30,24 @@ async function startServer() {
   const PORT = Number(portVal);
   const isProd = process.env.NODE_ENV === 'production';
 
+  // Security Hardenings
+  app.disable('x-powered-by');
+  app.set('trust proxy', 1);
+
+  // Enable gzip/deflate response compression for all traffic
+  app.use(compression());
+
+  // Force HTTPS in production behind reverse proxies
+  if (isProd) {
+    app.use((req, res, next) => {
+      const proto = req.headers['x-forwarded-proto'];
+      if (proto && proto !== 'https') {
+        return res.redirect(301, `https://${req.headers.host}${req.url}`);
+      }
+      next();
+    });
+  }
+
   // Request & Correlation ID logging middleware with strict secure response headers
   app.use((req, res, next) => {
     const correlationId = req.headers['x-correlation-id'] as string || `corr-${Math.random().toString(36).substring(2, 11)}-${Date.now()}`;
@@ -48,16 +67,70 @@ async function startServer() {
     next();
   });
 
+  // Simple IP rate limiting middleware for production (sliding window implementation)
+  const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+  app.use('/api', (req, res, next) => {
+    if (!isProd) {
+      return next(); // Skip rate-limiting in development for frictionless testing
+    }
+    const ip = req.ip || req.headers['x-forwarded-for'] as string || 'unknown';
+    const now = Date.now();
+    const limit = 150; // Max 150 requests per minute per IP
+    const windowMs = 60 * 1000;
+
+    let record = rateLimitMap.get(ip);
+    if (!record || now > record.resetTime) {
+      record = { count: 0, resetTime: now + windowMs };
+    }
+
+    record.count++;
+    rateLimitMap.set(ip, record);
+
+    // Occasional cleanup of the cache
+    if (rateLimitMap.size > 10000) {
+      for (const [k, v] of rateLimitMap.entries()) {
+        if (now > v.resetTime) {
+          rateLimitMap.delete(k);
+        }
+      }
+    }
+
+    if (record.count > limit) {
+      return res.status(429).json({
+        success: false,
+        error: 'Too Many Requests',
+        message: 'Gateway API rate limit exceeded. Please try again later.',
+        correlationId: (req as any).correlationId
+      });
+    }
+    next();
+  });
+
   // Cookie parser middleware for session tracking and verification
   app.use(cookieParser());
 
-  // Production-ready health endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({
-      status: 'UP',
+  // Dynamic, enterprise-ready active health check endpoint checking Spring Boot
+  app.get('/api/health', async (req, res) => {
+    let backendStatus = 'DOWN';
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout for active ping
+      const backendHealthUrl = `${backendUrl}/health`;
+      const response = await fetch(backendHealthUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        backendStatus = 'UP';
+      }
+    } catch (err) {
+      backendStatus = 'DOWN';
+    }
+
+    const status = backendStatus === 'UP' ? 'UP' : 'DEGRADED';
+    res.status(status === 'UP' ? 200 : 503).json({
+      status,
       timestamp: new Date().toISOString(),
       service: 'MedSupply Node Gateway Proxy',
-      backendConnection: 'CONFIGURED'
+      backendConnection: backendStatus
     });
   });
 
@@ -69,6 +142,9 @@ async function startServer() {
     createProxyMiddleware({
       target: backendUrl,
       changeOrigin: true,
+      xfwd: true, // Forward client IP, host, and protocol headers (X-Forwarded-For etc.)
+      proxyTimeout: 60000, // Timeout for backend response (60s)
+      timeout: 60000, // Timeout for establishing connection (60s)
       pathRewrite: {
         '^/api': '/api/v1',
       },
@@ -117,6 +193,11 @@ async function startServer() {
     const correlationId = (req as any).correlationId || 'unknown';
     console.error(`[Unhandled Error] [ID: ${correlationId}] Error occurred:`, err);
     
+    // Delegate to the default Express error handler if headers have already been sent to the client
+    if (res.headersSent) {
+      return next(err);
+    }
+
     res.status(err.status || 500).json({
       success: false,
       error: 'Internal Server Error',
@@ -125,9 +206,27 @@ async function startServer() {
     });
   });
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[MedSupply Proxy Server] Running on http://0.0.0.0:${PORT}`);
   });
+
+  // Graceful shutdown protocol
+  const shutdown = (signal: string) => {
+    console.log(`[MedSupply Proxy Server] Received ${signal}. Initiating graceful shutdown...`);
+    server.close(() => {
+      console.log('[MedSupply Proxy Server] Closed all active gateway connections. Exiting process.');
+      process.exit(0);
+    });
+
+    // Enforce shutdown after a maximum wait time of 10 seconds
+    setTimeout(() => {
+      console.error('[MedSupply Proxy Server] Forced shutdown due to pending connections.');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer();

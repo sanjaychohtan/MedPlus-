@@ -11,4 +11,10 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     List<Order> findByCustomerIdAndIsDeletedFalse(UUID customerId);
     List<Order> findByOrderTypeAndIsDeletedFalse(String orderType);
     List<Order> findByOrderStatusAndIsDeletedFalse(String orderStatus);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT o FROM Order o WHERE o.id = :id AND o.isDeleted = false")
+    java.util.Optional<Order> findByIdWithLock(@org.springframework.data.repository.query.Param("id") UUID id);
+
+    boolean existsByCustomerAndPoNumberAndIsDeletedFalse(com.medsupply.platform.modules.auth.model.User customer, String poNumber);
 }

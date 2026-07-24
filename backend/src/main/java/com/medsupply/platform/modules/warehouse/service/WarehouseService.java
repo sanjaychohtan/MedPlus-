@@ -13,4 +13,6 @@ public interface WarehouseService {
     List<StockTransfer> getAllStockTransfers();
     StockTransfer createStockTransfer(UUID fromId, UUID toId, UUID productId, UUID batchId, int quantity, String requestedBy, String notes);
     StockTransfer approveStockTransfer(UUID id);
+    StockTransfer rejectStockTransfer(UUID id);
+    StockTransfer cancelStockTransfer(UUID id);
 }

@@ -9,4 +9,8 @@ import java.util.UUID;
 @Repository
 public interface StockTransferRepository extends JpaRepository<StockTransfer, UUID> {
     List<StockTransfer> findByFromWarehouseIdOrToWarehouseIdAndIsDeletedFalse(UUID fromWarehouseId, UUID toWarehouseId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT t FROM StockTransfer t WHERE t.id = :id")
+    java.util.Optional<StockTransfer> findByIdWithLock(@org.springframework.data.repository.query.Param("id") UUID id);
 }

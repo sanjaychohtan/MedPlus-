@@ -10,10 +10,22 @@ import java.util.UUID;
 
 @Repository
 public interface BatchRepository extends JpaRepository<Batch, UUID> {
+    boolean existsByBatchNumberIgnoreCaseAndIsDeletedFalse(String batchNumber);
+
+    org.springframework.data.domain.Page<Batch> findByIsDeletedFalse(org.springframework.data.domain.Pageable pageable);
 
     @Query("SELECT b FROM Batch b WHERE b.isDeleted = false AND b.product.id = :productId " +
            "AND b.status = 'ACTIVE' AND b.quantityAvailable > 0 ORDER BY b.expiryDate ASC")
     List<Batch> findFefoBatchesForProduct(@Param("productId") UUID productId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Batch b WHERE b.isDeleted = false AND b.product.id = :productId " +
+           "AND b.status = 'ACTIVE' AND b.quantityAvailable > 0 ORDER BY b.expiryDate ASC")
+    List<Batch> findFefoBatchesForProductWithLock(@Param("productId") UUID productId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Batch b WHERE b.id = :id")
+    java.util.Optional<Batch> findByIdWithLock(@Param("id") UUID id);
 
     List<Batch> findByWarehouseIdAndIsDeletedFalse(UUID warehouseId);
 

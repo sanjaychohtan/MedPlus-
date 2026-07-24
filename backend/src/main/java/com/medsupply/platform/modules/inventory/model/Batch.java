@@ -69,6 +69,10 @@ public class Batch extends BaseEntity {
     @PrePersist
     @PreUpdate
     public void calculateAvailableQuantity() {
-        this.quantityAvailable = this.quantityOnHand - this.quantityReserved;
+        if ("QUARANTINED".equals(this.status)) {
+            this.quantityAvailable = 0;
+        } else {
+            this.quantityAvailable = this.quantityOnHand - this.quantityReserved;
+        }
     }
 }

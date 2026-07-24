@@ -61,6 +61,19 @@ public class DeliveryTask extends BaseEntity {
     @Column(nullable = false, length = 50)
     private String status = "ASSIGNED";
 
-    @Column(name = "otp_code", nullable = false, length = 4)
+    @Column(name = "otp_code", nullable = false, length = 64) // 64 to store SHA-256 hash
     private String otpCode;
+
+    @Transient
+    private String transientOtp;
+
+    @Column(name = "otp_expiry")
+    private java.time.OffsetDateTime otpExpiry;
+
+    @Builder.Default
+    @Column(name = "otp_attempts", nullable = false)
+    private int otpAttempts = 0;
+
+    @Column(name = "lockout_time")
+    private java.time.OffsetDateTime lockoutTime;
 }
